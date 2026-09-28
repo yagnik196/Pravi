@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Layers,
   Shield,
@@ -7,7 +7,11 @@ import {
   Briefcase,
   Users,
   RefreshCw,
-  ArrowLeftRight
+  ArrowLeftRight,
+  Bell,
+  History,
+  Wrench,
+  AlertTriangle
 } from 'lucide-react';
 
 export const ROLES = [
@@ -25,7 +29,10 @@ export default function Navbar({
   currentView,
   onNavigate,
   onReseed,
-  reseeding
+  reseeding,
+  unreadNotificationsCount = 0,
+  onOpenNotifications,
+  onOpenAuditLogs
 }) {
   const activeRoleConfig = ROLES.find((r) => r.id === currentRole) || ROLES[0];
   const RoleIcon = activeRoleConfig.icon;
@@ -48,11 +55,11 @@ export default function Navbar({
                   PRAVI
                 </span>
                 <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-                  Gujarat R&B
+                  Gujarat R&B (P1)
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 font-medium hidden sm:block">
-                Infrastructure Monitoring System
+                Infrastructure Lifecycle & Surveillance Platform
               </p>
             </div>
           </div>
@@ -63,7 +70,7 @@ export default function Navbar({
               onClick={() => onNavigate('dashboard')}
               className={`px-3 py-1.5 rounded-lg transition ${
                 currentView === 'dashboard'
-                  ? 'bg-blue-50 text-blue-700'
+                  ? 'bg-blue-50 text-blue-700 font-bold'
                   : 'hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
@@ -75,11 +82,11 @@ export default function Navbar({
                 onClick={() => onNavigate('projects')}
                 className={`px-3 py-1.5 rounded-lg transition ${
                   currentView === 'projects'
-                    ? 'bg-blue-50 text-blue-700'
+                    ? 'bg-blue-50 text-blue-700 font-bold'
                     : 'hover:bg-slate-100 hover:text-slate-900'
                 }`}
               >
-                Projects
+                Infrastructure
               </button>
             )}
 
@@ -88,11 +95,24 @@ export default function Navbar({
                 onClick={() => onNavigate('issues')}
                 className={`px-3 py-1.5 rounded-lg transition ${
                   currentView === 'issues'
-                    ? 'bg-blue-50 text-blue-700'
+                    ? 'bg-blue-50 text-blue-700 font-bold'
                     : 'hover:bg-slate-100 hover:text-slate-900'
                 }`}
               >
-                Issues & Timelines
+                Issues & Lifecycles
+              </button>
+            )}
+
+            {(currentRole === 'State' || currentRole.startsWith('District')) && (
+              <button
+                onClick={() => onNavigate('maintenance')}
+                className={`px-3 py-1.5 rounded-lg transition ${
+                  currentView === 'maintenance'
+                    ? 'bg-blue-50 text-blue-700 font-bold'
+                    : 'hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                Maintenance
               </button>
             )}
 
@@ -101,7 +121,7 @@ export default function Navbar({
                 onClick={() => onNavigate('evaluations')}
                 className={`px-3 py-1.5 rounded-lg transition ${
                   currentView === 'evaluations'
-                    ? 'bg-blue-50 text-blue-700'
+                    ? 'bg-blue-50 text-blue-700 font-bold'
                     : 'hover:bg-slate-100 hover:text-slate-900'
                 }`}
               >
@@ -114,11 +134,11 @@ export default function Navbar({
                 onClick={() => onNavigate('tenders')}
                 className={`px-3 py-1.5 rounded-lg transition ${
                   currentView === 'tenders'
-                    ? 'bg-blue-50 text-blue-700'
+                    ? 'bg-blue-50 text-blue-700 font-bold'
                     : 'hover:bg-slate-100 hover:text-slate-900'
                 }`}
               >
-                Tenders
+                Tenders & Bids
               </button>
             )}
 
@@ -133,8 +153,36 @@ export default function Navbar({
           </nav>
 
           {/* Right Action Bar */}
-          <div className="flex items-center gap-2.5">
-            {/* Quick Reseed */}
+          <div className="flex items-center gap-2">
+            {/* Audit Logs Trigger (State and District) */}
+            {(currentRole === 'State' || currentRole.startsWith('District')) && onOpenAuditLogs && (
+              <button
+                onClick={onOpenAuditLogs}
+                title="System Audit Trail"
+                className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs flex items-center gap-1 transition"
+              >
+                <History className="w-3.5 h-3.5 text-purple-600" />
+                <span className="hidden lg:inline text-[11px] font-semibold">Audit Trail</span>
+              </button>
+            )}
+
+            {/* Notification Bell */}
+            {onOpenNotifications && (
+              <button
+                onClick={onOpenNotifications}
+                title="Operational Notifications"
+                className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 relative transition"
+              >
+                <Bell className="w-4 h-4 text-slate-600" />
+                {unreadNotificationsCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-600 text-white font-mono font-bold text-[9px] flex items-center justify-center shadow-sm animate-pulse">
+                    {unreadNotificationsCount}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {/* Reset Demo Button */}
             <button
               onClick={onReseed}
               disabled={reseeding}
@@ -159,7 +207,7 @@ export default function Navbar({
               <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-lg p-1.5 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-150 z-50">
                 <div className="px-2.5 py-1.5 border-b border-slate-100 mb-1">
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                    Switch Active Role
+                    Switch Active Actor
                   </span>
                 </div>
                 {ROLES.map((role) => {

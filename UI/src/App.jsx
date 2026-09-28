@@ -6,6 +6,10 @@ import Navbar from './components/Navbar';
 import EvaluationModal from './components/EvaluationModal';
 import ChangeRequestModal from './components/ChangeRequestModal';
 import NewProjectModal from './components/NewProjectModal';
+import MaintenanceModal from './components/MaintenanceModal';
+import NotificationsDrawer from './components/NotificationsDrawer';
+import AuditLogModal from './components/AuditLogModal';
+import StatusBadge from './components/StatusBadge';
 
 // Views
 import RoleSelectView from './views/RoleSelectView';
@@ -15,6 +19,9 @@ import ProjectDetailView from './views/ProjectDetailView';
 import EvaluatorDashboardView from './views/EvaluatorDashboardView';
 import VendorTenderView from './views/VendorTenderView';
 import CitizenPortalView from './views/CitizenPortalView';
+
+// Icons
+import { Wrench, AlertTriangle, ChevronRight, Activity, Calendar, ShieldCheck, CheckCircle2 } from 'lucide-react';
 
 export default function App() {
   const [currentRole, setCurrentRole] = useState('landing');
@@ -26,9 +33,11 @@ export default function App() {
   const [selectedProject, setSelectedProject] = useState(null);
   const [evaluations, setEvaluations] = useState([]);
   const [issues, setIssues] = useState([]);
+  const [maintenance, setMaintenance] = useState([]);
   const [tenders, setTenders] = useState([]);
   const [hierarchy, setHierarchy] = useState(null);
   const [stats, setStats] = useState(null);
+  const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [reseeding, setReseeding] = useState(false);
 
@@ -36,26 +45,33 @@ export default function App() {
   const [activeEvaluationModal, setActiveEvaluationModal] = useState(null);
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [showChangeRequestModal, setShowChangeRequestModal] = useState(false);
+  const [activeMaintenanceData, setActiveMaintenanceData] = useState(null); // { issue, maintenance }
+  const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
+  const [showAuditLogModal, setShowAuditLogModal] = useState(false);
 
   // Initial Data Load
   const loadAllData = async () => {
     try {
       setLoading(true);
-      const [projRes, evalRes, issueRes, tenderRes, hierRes, statsRes] = await Promise.all([
+      const [projRes, evalRes, issueRes, maintRes, tenderRes, hierRes, statsRes, notifRes] = await Promise.all([
         api.getProjects().catch(() => ({ data: [] })),
         api.getEvaluations().catch(() => ({ data: [] })),
         api.getIssues().catch(() => ({ data: [] })),
+        api.getMaintenance().catch(() => ({ data: [] })),
         api.getTenders().catch(() => ({ data: [] })),
         api.getHierarchy().catch(() => null),
         api.getStats().catch(() => null),
+        api.getNotifications().catch(() => ({ data: [] })),
       ]);
 
       setProjects(projRes.data || []);
       setEvaluations(evalRes.data || []);
       setIssues(issueRes.data || []);
+      setMaintenance(maintRes.data || []);
       setTenders(tenderRes.data || []);
       setHierarchy(hierRes);
       setStats(statsRes);
+      setNotifications(notifRes.data || []);
     } catch (err) {
       console.error('Failed to load application data:', err);
     } finally {
@@ -118,11 +134,44 @@ export default function App() {
   };
 
   const handleAdvanceTimeline = async (issueId, payload) => {
-    const res = await api.advanceTimeline(issueId, payload);
+    const res = await api.advanceTimeline(issueId, payload, currentRole);
     await loadAllData();
     if (selectedProjectId) {
       await loadProjectDetail(selectedProjectId);
     }
+    return res;
+  };
+
+  const handleCreateMaintenance = async (data) => {
+    const res = await api.createMaintenance(data, currentRole);
+    await loadAllData();
+    if (selectedProjectId) {
+      await loadProjectDetail(selectedProjectId);
+    }
+    return res;
+  };
+
+  const handleCompleteMaintenance = async (maintId) => {
+    const res = await api.completeMaintenance(maintId, currentRole);
+    await loadAllData();
+    if (selectedProjectId) {
+      await loadProjectDetail(selectedProjectId);
+    }
+    return res;
+  };
+
+  const handleVerifyMaintenance = async (maintId, payload) => {
+    const res = await api.verifyMaintenance(maintId, payload);
+    await loadAllData();
+    if (selectedProjectId) {
+      await loadProjectDetail(selectedProjectId);
+    }
+    return res;
+  };
+
+  const handleAddMonitoringRule = async (projectId, rule) => {
+    const res = await api.addMonitoringRule(projectId, rule);
+    await loadProjectDetail(projectId);
     return res;
   };
 
@@ -142,13 +191,26 @@ export default function App() {
   };
 
   const handleCreateProject = async (data) => {
-    const res = await api.createProject(data);
+    const res = await api.createProject(data, currentRole);
     await loadAllData();
     await loadProjectDetail(res.data.id);
   };
 
+  const handleMarkNotificationRead = async (notifId) => {
+    await api.markNotificationRead(notifId);
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === notifId ? { ...n, is_read: true } : n))
+    );
+  };
+
+  const handleOpenMaintenanceForIssue = (issue) => {
+    const linkedMaint = maintenance.find((m) => m.issue_id === issue.id || m.id === issue.maintenance_id);
+    setActiveMaintenanceData({ issue, maintenance: linkedMaint || null });
+  };
+
   const activeDistrictName = currentRole === 'District-2' ? 'Surat' : 'Ahmedabad';
   const activeRegionName = currentRole === 'District-2' ? 'Surat Region' : 'Ahmedabad Region';
+  const unreadCount = notifications.filter((n) => !n.is_read).length;
 
   // 1. Landing View
   if (currentRole === 'landing') {
@@ -176,6 +238,9 @@ export default function App() {
         }}
         onReseed={handleReseed}
         reseeding={reseeding}
+        unreadNotificationsCount={unreadCount}
+        onOpenNotifications={() => setShowNotificationsDrawer(true)}
+        onOpenAuditLogs={() => setShowAuditLogModal(true)}
       />
 
       {/* Main Content Area */}
@@ -200,9 +265,11 @@ export default function App() {
                 }}
                 onOpenEvaluation={(ev) => setActiveEvaluationModal(ev || evaluations[0])}
                 onOpenChangeRequest={() => setShowChangeRequestModal(true)}
+                onOpenMaintenanceModal={handleOpenMaintenanceForIssue}
                 onAdvanceTimeline={handleAdvanceTimeline}
                 onAddComment={handleAddComment}
                 onRespondChangeRequest={handleRespondChangeRequest}
+                onAddMonitoringRule={handleAddMonitoringRule}
               />
             )}
 
@@ -224,14 +291,16 @@ export default function App() {
                 projects={projects}
                 issues={issues}
                 evaluations={evaluations}
+                maintenance={maintenance}
                 onSelectProject={(id) => loadProjectDetail(id)}
                 onOpenNewProject={() => setShowNewProjectModal(true)}
                 onOpenEvaluation={(ev) => setActiveEvaluationModal(ev)}
                 onSelectIssue={(iss) => loadProjectDetail(iss.project_id)}
+                onOpenMaintenanceModal={handleOpenMaintenanceForIssue}
               />
             )}
 
-            {/* View 4: Projects List */}
+            {/* View 4: Infrastructure List (State & Districts) */}
             {currentView === 'projects' && (
               <StateDashboardView
                 projects={projects}
@@ -251,18 +320,18 @@ export default function App() {
               />
             )}
 
-            {/* View 6: Issues Monitor */}
+            {/* View 6: Issues Monitor with Explainable Causes & Aging */}
             {currentView === 'issues' && (
               <div className="space-y-5">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-200">
                   <div>
                     <h2 className="text-xl font-bold text-slate-900">Active Operational Exceptions</h2>
                     <p className="text-xs text-slate-500">
-                      Rule-detected non-conformances with active operational timelines
+                      Rule-detected non-conformances with active operational resolution timelines
                     </p>
                   </div>
                   <span className="text-xs font-mono px-3 py-1 rounded-md bg-rose-50 border border-rose-200 text-rose-700 font-bold">
-                    {issues.filter(i => i.status !== 'RESOLVED').length} Active Issues
+                    {issues.filter(i => i.status !== 'RESOLVED' && i.status !== 'CLOSED').length} Active Issues
                   </span>
                 </div>
 
@@ -284,24 +353,31 @@ export default function App() {
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-slate-500 font-mono">
-                            Detected: {iss.detected_date}
+                            Aging: <strong className="text-amber-700">{iss.aging_days || 3} days</strong>
                           </span>
-                          <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded border border-amber-200">
-                            {iss.status}
-                          </span>
+                          <StatusBadge status={iss.status || 'OPEN'} />
                         </div>
                       </div>
 
-                      <p className="text-xs text-slate-600 mt-2">
-                        Project: <strong className="text-slate-800">{iss.project_name}</strong> • Jurisdiction: {iss.district} District ({iss.responsible_org})
-                      </p>
+                      {/* Traceable Cause Explanation */}
+                      <div className="mt-3 p-2.5 rounded-lg bg-amber-50/70 border border-amber-200 text-xs text-slate-700">
+                        <p>
+                          <strong>Cause:</strong> <span className="text-rose-700 font-bold">{iss.detected_metric || iss.parameter}</span> measured at{' '}
+                          <span className="text-rose-700 font-bold">{iss.detected_value || iss.observed_value}</span>, breaching threshold ({iss.operator || '<'} {iss.threshold_value || '60'}).
+                        </p>
+                        {iss.detection_reason && (
+                          <p className="text-[11px] text-slate-600 italic mt-0.5">
+                            "{iss.detection_reason}"
+                          </p>
+                        )}
+                      </div>
 
                       <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
                         <span>
-                          Parameter: <strong className="text-rose-700">{iss.parameter}</strong> (Observed: {iss.observed_value})
+                          Infrastructure: <strong className="text-slate-800">{iss.project_name}</strong> • Jurisdiction: {iss.district} District
                         </span>
                         <span className="text-blue-700 font-semibold group-hover:translate-x-0.5 transition-transform inline-flex items-center gap-1">
-                          Open Operational Timeline →
+                          Open Resolution Timeline →
                         </span>
                       </div>
                     </div>
@@ -310,7 +386,85 @@ export default function App() {
               </div>
             )}
 
-            {/* View 7: Third-Party Vendor / Tenders Portal */}
+            {/* View 7: Maintenance Workflows */}
+            {currentView === 'maintenance' && (
+              <div className="space-y-5">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900">Infrastructure Maintenance Workflows</h2>
+                    <p className="text-xs text-slate-500">
+                      Active corrective remediation activities, scheduled repairs, and evaluator verification statuses
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono px-3 py-1 rounded-md bg-blue-50 border border-blue-200 text-blue-700 font-bold">
+                    {maintenance.length} Active Workflows
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {maintenance.map((m) => (
+                    <div
+                      key={m.id}
+                      className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Wrench className="w-4 h-4 text-blue-600" />
+                          <span className="font-mono text-xs font-bold text-blue-700">{m.id}</span>
+                        </div>
+                        <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${
+                          m.status === 'VERIFIED' ? 'bg-emerald-100 text-emerald-800' :
+                          m.status === 'COMPLETED' ? 'bg-purple-100 text-purple-800' :
+                          'bg-amber-100 text-amber-800'
+                        }`}>
+                          {m.status}
+                        </span>
+                      </div>
+
+                      <h4 className="text-sm font-bold text-slate-900">{m.infrastructure_name}</h4>
+                      <p className="text-xs text-slate-600 leading-relaxed">{m.description}</p>
+
+                      <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase font-semibold block">Contractor</span>
+                          <span className="font-bold text-slate-800 truncate block">{m.assigned_party}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase font-semibold block">Scheduled Date</span>
+                          <span className="font-mono text-slate-800">{m.scheduled_date}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase font-semibold block">Estimated Budget</span>
+                          <span className="font-bold text-slate-800">₹{m.cost_estimate_cr} Cr</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase font-semibold block">Target Exception</span>
+                          <span className="font-mono text-rose-700 font-semibold">{m.issue_id}</span>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 flex items-center justify-between">
+                        <button
+                          onClick={() => loadProjectDetail(m.infrastructure_id)}
+                          className="text-xs font-semibold text-blue-700 hover:underline"
+                        >
+                          View Infrastructure Asset →
+                        </button>
+
+                        <button
+                          onClick={() => setActiveMaintenanceData({ issue: null, maintenance: m })}
+                          className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition"
+                        >
+                          Manage Workflow
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* View 8: Third-Party Vendor / Tenders Portal */}
             {(currentView === 'tenders' || (currentView === 'dashboard' && currentRole === 'Vendor')) && (
               <VendorTenderView
                 tenders={tenders}
@@ -318,7 +472,7 @@ export default function App() {
               />
             )}
 
-            {/* View 8: Citizen Public Portal */}
+            {/* View 9: Citizen Public Portal */}
             {(currentView === 'citizen' || (currentView === 'dashboard' && currentRole === 'Citizen')) && (
               <CitizenPortalView
                 projects={projects}
@@ -355,6 +509,41 @@ export default function App() {
           region={activeRegionName}
           onClose={() => setShowNewProjectModal(false)}
           onCreateProject={handleCreateProject}
+        />
+      )}
+
+      {/* MODAL 4: Maintenance Workflow Modal */}
+      {activeMaintenanceData && (
+        <MaintenanceModal
+          issue={activeMaintenanceData.issue}
+          maintenance={activeMaintenanceData.maintenance}
+          currentRole={currentRole}
+          onClose={() => setActiveMaintenanceData(null)}
+          onCreateMaintenance={handleCreateMaintenance}
+          onCompleteMaintenance={handleCompleteMaintenance}
+          onVerifyMaintenance={handleVerifyMaintenance}
+        />
+      )}
+
+      {/* MODAL 5: Notifications Drawer */}
+      {showNotificationsDrawer && (
+        <NotificationsDrawer
+          notifications={notifications}
+          onClose={() => setShowNotificationsDrawer(false)}
+          onMarkRead={handleMarkNotificationRead}
+          onSelectEntity={(type, id) => {
+            setShowNotificationsDrawer(false);
+            if (type === 'project' || type === 'issue') {
+              loadProjectDetail(id.startsWith('ISSUE') ? 'RNB-2026-001' : id);
+            }
+          }}
+        />
+      )}
+
+      {/* MODAL 6: System Audit Trail Modal */}
+      {showAuditLogModal && (
+        <AuditLogModal
+          onClose={() => setShowAuditLogModal(false)}
         />
       )}
     </div>
