@@ -14,7 +14,7 @@
 - **Frontend**: React
 - **Backend**: FastAPI
 - **Database**: MySQL, MongoDB
-- **Other**:
+- **Other**:    
     
 
 ## How it works :

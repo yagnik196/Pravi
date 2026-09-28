@@ -32,3 +32,5 @@ lerna-debug.log*
 
 # Other files
 /Server/test_*
+Painpoints.txt
+Context.md
